@@ -1,0 +1,2 @@
+[console_scripts]
+coguard = coguard.cli:main

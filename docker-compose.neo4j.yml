@@ -1,0 +1,35 @@
+services:
+  neo4j:
+    image: ${NEO4J_IMAGE:-neo4j:5.18.1-community}
+    container_name: coguard-neo4j
+    restart: unless-stopped
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      NEO4J_AUTH: neo4j/coguard-password
+      NEO4J_server_memory_heap_initial__size: 128m
+      NEO4J_server_memory_heap_max__size: 256m
+      NEO4J_server_memory_pagecache_size: 256m
+      NEO4J_PLUGINS: '["apoc"]'
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - neo4j_plugins:/plugins
+
+  neodash:
+    image: ${NEODASH_IMAGE:-neo4jlabs/neodash:latest}
+    platform: ${NEODASH_PLATFORM:-linux/amd64}
+    container_name: coguard-neodash
+    restart: unless-stopped
+    depends_on:
+      - neo4j
+    ports:
+      - "5005:5005"
+    environment:
+      ssoEnabled: "false"
+
+volumes:
+  neo4j_data:
+  neo4j_logs:
+  neo4j_plugins:
