@@ -29,7 +29,9 @@ Co-Guard 是一个多智能体安全护栏流程原型，基于 `方法设计.md
 │   │   ├── metrics.py
 │   │   ├── plots.py
 │   │   ├── README.md
-│   │   └── runner.py
+│   │   ├── runner.py
+│   │   ├── sequential.py
+│   │   └── sequential_cli.py
 │   ├── reasoning/
 │   │   ├── __init__.py
 │   │   └── reasoner.py
@@ -46,6 +48,7 @@ Co-Guard 是一个多智能体安全护栏流程原型，基于 `方法设计.md
 ├── pyproject.toml
 ├── scripts/
 │   └── run_security_evaluation.py
+│   └── run_sequential_security_evaluation.py
 └── tests/
 ```
 
@@ -104,6 +107,59 @@ python3 scripts/run_security_evaluation.py --harmful-limit 100 --benign-limit 40
 
 详细设计见 [evaluation/README.md](/Users/dengjiayi/code/Co-Guard/coguard/evaluation/README.md)。
 
+## 多轮顺序注入评测
+
+项目现在还支持基于 JSONL 的多轮攻击链评测，用于验证：
+
+1. 每组攻击样本是否被独立沙盒隔离
+2. 哪一轮首次触发熔断
+3. 如果所有子任务都注入完成仍未触发熔断，是否判定为攻击穿透
+
+运行方式：
+
+```bash
+python3 -m coguard.evaluation.sequential_cli /path/to/attack_sequences.jsonl
+```
+
+或：
+
+```bash
+python3 scripts/run_sequential_security_evaluation.py /path/to/attack_sequences.jsonl
+```
+
+这套评测会输出会话隔离后的 `results.json`、`turn_log.csv`、`summary.json`、`summary.md` 和三张 SVG 图，用于展示防御成功率、早停轮次分布与累计检测曲线。
+
+## 场景一：连续子任务注入基线
+
+如果你已经把攻击目标拆解成子任务列表，并存成类似 [data/advbench_decomposed.jsonl](/Users/dengjiayi/code/Co-Guard/data/advbench_decomposed.jsonl) 的 JSONL 文件，系统现在可以直接把其中的 `decomposed_questions` 当作连续多轮输入来做场景一测试。
+
+运行方式：
+
+```bash
+python3 -m coguard.evaluation.scenario1_cli --input data/advbench_decomposed.jsonl
+```
+
+或：
+
+```bash
+python3 scripts/run_scenario1_evaluation.py --input data/advbench_decomposed.jsonl
+```
+
+这组测试会额外报告：
+
+- `late_detection_rate`
+- `average_task_count`
+- 连续子任务注入下的防御成功率与攻击穿透率
+
+## 拆解模块输出格式
+
+`coguard.decompose.decompose` 现在统一使用列表形式表达子任务：
+
+- `run_decomposition()` 返回 `List[str]`
+- `process_single_query()` / `process_queries()` / `batch_process_advbench()` 的 `decomposed_questions` 字段为 `List[str]`
+
+如果传入自定义 `decompose_fn`，函数也必须返回 `List[str]`，不再兼容字符串返回值。
+
 ## EDC / EDC+R 流程
 
 当前流水线已经按论文思路拆成以下阶段：
@@ -126,42 +182,53 @@ python3 scripts/run_security_evaluation.py --harmful-limit 100 --benign-limit 40
 - 轻量向量相似度
 - 实体类型约束
 
-综合得分超过 `COGUARD_ENTITY_RELATEDNESS_THRESHOLD` 时，相关实体才会被拉入上下文。默认阈值在根目录 [`.env`](/Users/dengjiayi/code/Co-Guard/.env) 中配置。
+综合得分超过 `ENTITY_RELATEDNESS_THRESHOLD` 时，相关实体才会被拉入上下文。默认阈值在根目录 [`.env`](/Users/dengjiayi/code/Co-Guard/.env) 中配置。
 
 ## 本地 LLM 接口
 
-本项目支持接入本地部署的 OpenAI-compatible chat completion 服务，例如 vLLM、SGLang 或其他兼容 `/v1/chat/completions` 的推理服务。
+本项目已经收口为本地优先方案，不再保留外部 API 调用 LLM 的旧分支。
 
-环境变量方式：
+现在有两种可用方式：
 
-```bash
-export COGUARD_LLM_BACKEND=local_openai
-export COGUARD_LLM_BASE_URL=http://127.0.0.1:8000/v1
-export COGUARD_LLM_MODEL=your-local-model
-export COGUARD_LLM_API_KEY=EMPTY
-export COGUARD_REFINEMENT_ITERATIONS=1
-```
+- `LLM_BACKEND=local_model`
+  直接从 `/model` 加载 Hugging Face 模型。
+- `LLM_BACKEND=auto`
+  优先尝试本地 `/model`，加载失败时回退到 `RuleBasedLLMAdapter`。
 
-CLI 方式：
+直接加载本地目录模型的示例：
 
 ```bash
-python3 main.py \
-  --llm-backend local_openai \
-  --llm-base-url http://127.0.0.1:8000/v1 \
-  --llm-model your-local-model \
-  --refinement-iterations 1 \
-  "Alan Shepard was born on Nov 18, 1923 and selected by NASA in 1959."
+export LLM_BACKEND=local_model
+export LLM_MODEL_PATH=/model
+export LLM_MODEL=your-model-name
+export LLM_DEVICE=auto
 ```
 
-`[semantic/llm.py](/Users/dengjiayi/code/Co-Guard/coguard/semantic/llm.py)` 中的 `OpenAICompatibleLLMAdapter` 会调用以下能力：
+此时系统会优先尝试加载 `/model/your-model-name`；如果 `LLM_MODEL` 留空，则直接把 `/model` 当作模型目录。
 
-- entity extraction
-- few-shot OIE
-- relation definition
-- canonicalization choice
+如果你希望在远程服务器上起本地推理服务，再让多 agent 通过统一 runtime 调用，也可以使用：
 
-如果请求失败或返回 JSON 不合法，会自动退回 `RuleBasedLLMAdapter`。
-回退信息会出现在结果的 `warnings` 字段中，便于服务器联调时确认是否真正命中了本地模型。
+- `LOCAL_AGENT_RUNTIME_BACKEND=openai_compatible_local`
+- `LOCAL_AGENT_BASE_URL=http://127.0.0.1:8000/v1`
+
+这里的 `openai_compatible_local` 只指向你自己部署的本地服务，不再用于外部 API。
+
+## 推理策略
+
+图推理现在支持三种策略，默认推荐 `hybrid`：
+
+- `rules`
+  只运行 ToG 风格 relation-first 规则推理。
+- `llm`
+  用 LLM 对图证据做最终裁决，但仍保留规则推理生成的证据路径。
+- `hybrid`
+  先运行规则推理，再让 LLM 做二次审阅，并按保守策略融合结果。
+
+可通过 `.env` 或 CLI 配置：
+
+```bash
+export REASONING_STRATEGY=hybrid
+```
 
 ## Schema Retriever
 
@@ -175,16 +242,16 @@ Schema retriever 支持三种后端：
 
 ```bash
 conda run -n coguard python -m pip install -e ".[retriever]"
-export COGUARD_SCHEMA_RETRIEVER_BACKEND=sentence_transformer
-export COGUARD_SCHEMA_RETRIEVER_MODEL=/path/to/your-schema-retriever
+export SCHEMA_RETRIEVER_BACKEND=sentence_transformer
+export SCHEMA_RETRIEVER_MODEL=/path/to/your-schema-retriever
 ```
 
 启用本地 embeddings endpoint：
 
 ```bash
-export COGUARD_SCHEMA_RETRIEVER_BACKEND=openai_embedding
-export COGUARD_SCHEMA_RETRIEVER_BASE_URL=http://127.0.0.1:8001/v1
-export COGUARD_SCHEMA_RETRIEVER_MODEL=your-embedding-model
+export SCHEMA_RETRIEVER_BACKEND=openai_embedding
+export SCHEMA_RETRIEVER_BASE_URL=http://127.0.0.1:8001/v1
+export SCHEMA_RETRIEVER_MODEL=your-embedding-model
 ```
 
 retriever 查询会使用论文中的 instruction 风格：
@@ -203,11 +270,11 @@ Query: {text}
 
 ```bash
 conda run -n coguard python -m pip install "neo4j>=5.20"
-export COGUARD_GRAPH_BACKEND=neo4j
-export COGUARD_NEO4J_URI=bolt://localhost:7687
-export COGUARD_NEO4J_USERNAME=neo4j
-export COGUARD_NEO4J_PASSWORD=your-password
-export COGUARD_NEO4J_DATABASE=neo4j
+export GRAPH_BACKEND=neo4j
+export NEO4J_URI=bolt://localhost:7687
+export NEO4J_USERNAME=neo4j
+export NEO4J_PASSWORD=your-password
+export NEO4J_DATABASE=neo4j
 ```
 
 如果运行时 Neo4j 不可用，流程会自动回退到内存后端，并给出警告。

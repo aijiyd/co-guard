@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import logging
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
@@ -16,6 +17,9 @@ from .runner import (
     write_summary_json,
     write_summary_markdown,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -58,24 +62,43 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--llm-backend",
-        choices=("rule", "local_openai"),
+        choices=("auto", "rule", "local_model", "openai_compatible_local", "vllm_server"),
         help="Override the LLM backend.",
+    )
+    parser.add_argument(
+        "--llm-model",
+        help="Override the local model name when using the local_model backend.",
+    )
+    parser.add_argument(
+        "--llm-model-path",
+        help="Override the local model directory. Defaults to /model.",
     )
     parser.add_argument(
         "--reuse-pipeline",
         action="store_true",
         help="Reuse one pipeline across all samples. Disabled by default to avoid graph leakage.",
     )
+    parser.add_argument(
+        "--reasoning-strategy",
+        choices=("rules", "llm", "hybrid"),
+        help="Override the graph reasoning strategy.",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
+    if not logging.getLogger().handlers:
+        logging.basicConfig(level=logging.INFO, format="%(message)s")
+
     parser = build_parser()
     args = parser.parse_args(argv)
 
     config = AppConfig.from_env(
         graph_backend=args.backend,
         llm_backend=args.llm_backend,
+        llm_model=args.llm_model,
+        llm_model_path=args.llm_model_path,
+        reasoning_strategy=args.reasoning_strategy,
     )
     samples = load_default_benchmark(
         data_dir=args.data_dir,
@@ -103,13 +126,13 @@ def main(argv: list[str] | None = None) -> int:
     write_threshold_metrics_csv(output_root / "threshold_metrics.csv", summary)
     write_all_plots(figures_dir, summary, records)
 
-    print("Evaluation complete.")
-    print("Samples: %d (harmful=%d, benign=%d)" % (
+    logger.info("Evaluation complete.")
+    logger.info("Samples: %d (harmful=%d, benign=%d)" % (
         summary.sample_count,
         summary.harmful_count,
         summary.benign_count,
     ))
-    print(
+    logger.info(
         "Accuracy=%.4f Precision=%.4f Recall=%.4f Specificity=%.4f F1=%.4f"
         % (
             summary.accuracy,
@@ -119,7 +142,7 @@ def main(argv: list[str] | None = None) -> int:
             summary.f1,
         )
     )
-    print("Outputs written to %s" % output_root)
+    logger.info("Outputs written to %s" % output_root)
     return 0
 
 

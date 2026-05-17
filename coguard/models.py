@@ -19,6 +19,8 @@ class SchemaRelation:
 
     name: str
     definition: str
+    example_text: str = ""
+    example_triple: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -28,6 +30,15 @@ class RelationCandidate:
     name: str
     definition: str
     score: float
+
+
+@dataclass
+class CanonicalizationItem:
+    """One relation-normalization decision prepared for batch verification."""
+
+    triple: RawTriple
+    relation_definition: str
+    candidates: List[RelationCandidate] = field(default_factory=list)
 
 
 @dataclass
@@ -98,6 +109,17 @@ class ReasoningPath:
 
 
 @dataclass
+class LLMGraphJudgment:
+    """Structured LLM review returned by the graph reasoning adapter."""
+
+    malicious: bool
+    score: float
+    confidence: float
+    adequacy: str
+    reasons: List[str] = field(default_factory=list)
+
+
+@dataclass
 class QueryAnalysisResult:
     """End-to-end pipeline output for a single user query."""
 
@@ -116,4 +138,16 @@ class QueryAnalysisResult:
     counter_evidence_paths: List[ReasoningPath] = field(default_factory=list)
     missing_links: List[str] = field(default_factory=list)
     graph_backend: str = "memory"
+    session_id: str = ""
+    context_id: str = ""
+    assembly_chain_score: float = 0.0
+    assembly_current_advances_chain: bool = False
+    assembly_current_closes_chain: bool = False
+    assembly_current_phases: List[str] = field(default_factory=list)
+    assembly_historical_phases: List[str] = field(default_factory=list)
+    assembly_current_topics: List[str] = field(default_factory=list)
+    assembly_historical_topics: List[str] = field(default_factory=list)
+    assembly_shared_topics: List[str] = field(default_factory=list)
+    assembly_reasons: List[str] = field(default_factory=list)
+    assembly_timeline: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)

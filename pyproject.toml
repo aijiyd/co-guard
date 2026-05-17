@@ -8,15 +8,28 @@ version = "0.1.0"
 description = "Prototype guardrail pipeline for multi-agent malicious intent detection."
 readme = "README.md"
 requires-python = ">=3.9"
-dependencies = []
+dependencies = [
+    "matplotlib>=3.9.4",
+]
 
 [project.optional-dependencies]
 neo4j = ["neo4j>=5.20"]
 retriever = ["sentence-transformers>=3.0"]
+decompose = [
+	"transformers>=4.41",
+	"torch>=2.1",
+	"accelerate>=0.30",
+]
 
 [project.scripts]
 coguard = "coguard.cli:main"
 coguard-eval = "coguard.evaluation.cli:main"
+coguard-seq-eval = "coguard.evaluation.sequential_cli:main"
+coguard-s1-eval = "coguard.evaluation.scenario1_cli:main"
 
 [tool.setuptools]
-packages = ["coguard", "coguard.semantic", "coguard.graph", "coguard.reasoning", "coguard.evaluation"]
+packages = ["coguard", "coguard.agents", "coguard.decompose", "coguard.semantic", "coguard.graph", "coguard.reasoning", "coguard.evaluation"]
+
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+default = true

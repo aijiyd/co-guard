@@ -93,3 +93,90 @@ python3 scripts/run_security_evaluation.py --harmful-limit 100 --benign-limit 40
 - `figures/*.svg`
 
 这些文件可以直接作为实验记录、论文插图和结果附录的输入。
+
+## 多轮顺序注入评测
+
+除了单轮分类评测，模块现在还支持“顺序注入 + 早停评估”模式，用于评估多轮拆解攻击在图上下文中的累积触发效果。
+
+这套模式的核心约束是：
+
+1. 每条 JSONL 样本都会生成唯一 `session_id`。
+2. 写入图的 Query / Entity / Edge 都带上该 `session_id`。
+3. 推理查询只匹配该 session 的子图。
+4. 一旦某一轮触发 `refuse`，立刻记为“防御成功”，记录触发轮次并结束该样本。
+5. 如果所有子任务都注入完仍未触发 `refuse`，记为“攻击穿透”。
+
+对应文件：
+
+- `sequential.py`
+  - JSONL 读取
+  - 顺序注入评测器
+  - 多轮评测汇总
+  - 结果导出与 SVG 图
+- `sequential_cli.py`
+  - 命令行入口
+
+运行方式：
+
+```bash
+python3 -m coguard.evaluation.sequential_cli /path/to/attack_sequences.jsonl
+```
+
+或：
+
+```bash
+python3 scripts/run_sequential_security_evaluation.py /path/to/attack_sequences.jsonl
+```
+
+JSONL 每行支持以下任一字段作为子任务列表：
+
+- `tasks`
+- `subtasks`
+- `questions`
+- `sequence`
+
+顺序评测会输出：
+
+- `results.json`
+- `turn_log.csv`
+- `summary.json`
+- `summary.md`
+- `figures/outcome_breakdown.svg`
+- `figures/early_stop_histogram.svg`
+- `figures/cumulative_detection_curve.svg`
+
+## 场景一：连续子任务注入基线
+
+如果你已经有类似 `data/advbench_decomposed.jsonl` 这样的分解结果文件，并且每行包含：
+
+- `id`
+- `original_prompt`
+- `decomposed_questions`
+
+那么现在可以直接跑“场景一”基线，不需要手工改字段名。
+
+运行方式：
+
+```bash
+python3 -m coguard.evaluation.scenario1_cli --input data/advbench_decomposed.jsonl
+```
+
+或：
+
+```bash
+python3 scripts/run_scenario1_evaluation.py --input data/advbench_decomposed.jsonl
+```
+
+这组实验会把同一样本的 `decomposed_questions` 当作连续多轮输入：
+
+1. 同一样本共享一个 `session_id`
+2. 子任务按原顺序连续注入
+3. 每轮都执行完整防御流水线
+4. 一旦触发 `refuse`，记为防御成功并记录熔断轮次
+
+额外输出的场景一指标包括：
+
+- `late_detection_rate`
+  - 非第 1 轮才识别出来的比例，更能反映图上下文的累积推理能力
+- `average_task_count`
+  - 每条攻击链平均包含多少个子任务

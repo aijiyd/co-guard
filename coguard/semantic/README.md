@@ -19,8 +19,12 @@
 
 - `parser.py`
   语义解析主入口，负责串起抽取、定义、标准化和聚类。
+- `agents.py`
+  模块一的 agent 封装层，定义 `extractor / definer / canonicalizer / entity_agent` 以及 coordinator。
+- `../agents/runtime.py`
+  本地 multi-agent runtime，支持 `openai_compatible_local` 与 `transformers_local` 两种执行后端。
 - `llm.py`
-  LLM 适配层，定义统一接口，并提供规则版与本地 OpenAI-compatible 版实现。
+  LLM 适配层，定义统一接口，并提供规则版与本地目录模型版实现。
 - `prompts.py`
   few-shot prompt 模板，覆盖实体抽取、OIE、关系定义和 canonicalization。
 - `schema.py`
@@ -36,7 +40,9 @@
 
 ### 3.1 Extract：开放式三元组抽取
 
-入口是 `SemanticParser.parse()`。它首先调用 `llm_adapter.extract_triples()`，得到一组三元组：
+入口是 `SemanticParser.parse()`。当前 `parse()` 已经不再直接逐步碰 `llm_adapter`，而是先经过 `SemanticAgentCoordinator`，再由 coordinator 调用对应 agent。
+
+第一步由 `semantic.extractor` 执行，得到一组三元组：
 
 - `subject`
 - `relation`
@@ -48,8 +54,8 @@
 
 1. 规则版 `RuleBasedLLMAdapter`
    作为离线 fallback，可在没有真实模型服务时跑通整条链路。
-2. `OpenAICompatibleLLMAdapter`
-   面向本地部署模型，走 `/v1/chat/completions` 接口，并使用 few-shot prompt 返回 JSON。
+2. `LocalModelLLMAdapter`
+   直接从本地模型目录加载 Hugging Face 格式模型。默认模型根目录是 `/model`，如果同时设置了模型名，则会优先解析成 `/model/<模型名>`。
 
 规则版抽取逻辑的关键点：
 
@@ -66,10 +72,26 @@
 
 - 没有模型时可以离线运行。
 - 接入模型后不需要改上层接口。
+- 同一套接口既能走规则，也能直接加载本地下载好的模型目录。
+
+本地目录模型后端的关键配置有：
+
+- `LLM_BACKEND=local_model`
+- `LLM_MODEL_PATH=/model`
+- `LLM_MODEL=<可选模型名>`
+- `LLM_DEVICE=auto`
+
+解析规则是：
+
+- 如果只设置 `LLM_MODEL_PATH=/model`，就直接把 `/model` 当作模型目录。
+- 如果同时设置 `LLM_MODEL=your-model-name`，则优先尝试 `/model/your-model-name`。
+- 如果 `LLM_MODEL` 本身是绝对路径，则直接加载该路径。
+
+如果本地模型缺失、`transformers` 未安装或推理失败，适配器会自动退回 `RuleBasedLLMAdapter`，并把原因写入 warning。
 
 ### 3.2 Define：关系定义生成
 
-抽到三元组后，`parse()` 会调用 `llm_adapter.define_relations()`，为每个不同关系生成定义文本。
+抽到三元组后，`parse()` 会调用 `semantic.definer`，为每个不同关系生成定义文本。
 
 定义阶段的作用很重要，因为后续 canonicalization 不是只看关系名，而是看“当前语境下这个关系到底表达了什么语义”。
 
@@ -99,7 +121,12 @@
 2. 对所有 schema definition 计算余弦相似度。
 3. 取 `top_k` 候选。
 4. 如果 raw relation 命中同义词表，则把对应 schema 候选强行提升到前面。
-5. 再调用 `choose_canonical_relation()` 做最后验证。
+5. 再调用 `semantic.canonicalizer` 的 `choose_canonical_relations()` 做批量验证。
+
+这里现在已经不是“每条 triple 单独问一次模型”，而是把同一条 query 里的多个 canonicalization item 一次性打包给模型。这样做有两个直接好处：
+
+- 同一条 query 内的关系归一化更一致
+- 本地模型或远程接口的调用次数明显下降
 
 如果验证通过，就映射到标准 schema。
 
@@ -129,6 +156,56 @@
 - schema retriever 检出的高相关关系
 
 在 few-shot OIE prompt 里，这些内容会以“候选实体 / 候选关系”形式附带给模型，帮助它在第二轮更容易抽出缺失关系。
+
+这里还有一个实现细节：
+
+- `pipeline.py` 不再直接调用 `llm_adapter.extract_entities()`
+- 而是通过 `SemanticParser.extract_entities()` 走 `semantic.entity_agent`
+
+这样模块一内部已经形成了统一的 agent 边界，后面替换成真正的本地 multi-agent 运行时会更顺畅。
+
+## 3.5 本地 Multi-Agent Runtime
+
+模块一现在已经支持“agent 角色”和“本地运行时”解耦：
+
+- `SemanticAgentCoordinator`
+  负责把 extractor / definer / canonicalizer / entity agent 串起来
+- `BaseLocalAgentRuntime`
+  负责真正执行本地模型调用
+
+当前支持两个 runtime 后端：
+
+1. `openai_compatible_local`
+   适合远程服务器上先启动本地推理服务，例如 `vLLM`
+2. `transformers_local`
+   适合直接从 `/model` 加载 Hugging Face 本地模型目录
+
+默认情况下，这个 runtime 是关闭的，不会影响你当前本机环境。只有当设置了：
+
+- `LOCAL_AGENT_RUNTIME_BACKEND`
+
+模块一才会优先通过本地 runtime 执行这些 agent。否则会继续走当前的 `llm_adapter` 路径。
+
+远程服务器建议使用这组配置：
+
+- `LOCAL_AGENT_RUNTIME_BACKEND=openai_compatible_local`
+- `LOCAL_AGENT_BASE_URL=http://127.0.0.1:8000/v1`
+- `LOCAL_AGENT_DEFAULT_MODEL=<你的本地服务模型名>`
+
+如果想直接加载目录模型，则使用：
+
+- `LOCAL_AGENT_RUNTIME_BACKEND=transformers_local`
+- `LOCAL_AGENT_MODEL_PATH=/model`
+- `LOCAL_AGENT_DEFAULT_MODEL=<可选模型目录名>`
+
+此外，还可以为不同 agent 指定不同模型：
+
+- `SEMANTIC_EXTRACTOR_MODEL`
+- `SEMANTIC_DEFINER_MODEL`
+- `SEMANTIC_CANONICALIZER_MODEL`
+- `SEMANTIC_ENTITY_MODEL`
+
+如果这些值留空，就会继承 `LOCAL_AGENT_DEFAULT_MODEL`。
 
 ## 4. 轻量向量化设计
 
@@ -173,6 +250,11 @@
 3. 关系定义
 4. canonicalization 选择
 
+其中 canonicalization 现在同时支持：
+
+- 单条关系验证 prompt
+- 批量关系验证 prompt
+
 这些 prompt 的共同设计原则是：
 
 - 输出必须是 JSON
@@ -200,7 +282,7 @@
 
 后续如果要继续增强，优先级建议如下：
 
-1. 替换更强的本地 LLM 作为 `extract / define / choose_canonical_relation` 后端。
+1. 替换更强的本地 LLM 作为 `extract / define / choose_canonical_relations` 后端。
 2. 增加更贴论文的示例库，针对你自己的安全场景做 few-shot 专门化。
 3. 给 entity normalization 增加别名和共指处理。
 4. 把 relation definition 与 canonicalization 做成可缓存流程，减少重复请求。

@@ -60,13 +60,29 @@ class AppConfig:
     """Runtime configuration shared across semantic, graph, and reasoning."""
 
     graph_backend: str = "memory"
-    llm_backend: str = "rule"
-    llm_base_url: str = "http://localhost:8000/v1"
+    llm_backend: str = "auto"
     llm_model: str = ""
+    llm_base_url: str = "http://127.0.0.1:8000/v1"
     llm_api_key: str = ""
+    llm_model_path: str = "/model"
+    llm_device: str = "auto"
     llm_temperature: float = 0.0
     llm_timeout_seconds: float = 60.0
     llm_max_tokens: int = 1024
+    local_agent_runtime_backend: str = ""
+    local_agent_base_url: str = "http://127.0.0.1:8000/v1"
+    local_agent_model_path: str = "/model"
+    local_agent_default_model: str = ""
+    local_agent_api_key: str = ""
+    semantic_extractor_model: str = ""
+    semantic_definer_model: str = ""
+    semantic_canonicalizer_model: str = ""
+    semantic_entity_model: str = ""
+    reasoning_judge_model: str = ""
+    semantic_embedding_backend: str = "vector"
+    semantic_embedding_model: str = ""
+    semantic_embedding_base_url: str = "http://localhost:8001/v1"
+    semantic_embedding_api_key: str = ""
     schema_top_k: int = 3
     schema_match_threshold: float = 0.28
     relation_cluster_threshold: float = 0.62
@@ -80,10 +96,13 @@ class AppConfig:
         "Instruct: retrieve relations that are present in the given text\nQuery: {text}"
     )
     entity_relatedness_threshold: float = 0.68
+    reasoning_strategy: str = "hybrid"
     reasoning_max_depth: int = 3
     reasoning_beam_width: int = 3
     reasoning_risk_evidence_threshold: float = 4.5
     reasoning_benign_evidence_threshold: float = 2.4
+    reasoning_llm_confidence_threshold: float = 0.7
+    reasoning_hybrid_rule_weight: float = 0.65
     context_hops: int = 2
     context_limit: int = 24
     neo4j_uri: str = ""
@@ -101,99 +120,186 @@ class AppConfig:
         # stay focused on behavior instead of repeatedly reading env vars.
         env_defaults = _load_env_defaults(env_path)
         config = cls(
-            graph_backend=_get_value("COGUARD_GRAPH_BACKEND", "memory", env_defaults),
-            llm_backend=_get_value("COGUARD_LLM_BACKEND", "rule", env_defaults),
+            graph_backend=_get_value("GRAPH_BACKEND", "memory", env_defaults),
+            llm_backend=_get_value("LLM_BACKEND", "auto", env_defaults),
+            llm_model=_get_value("LLM_MODEL", "", env_defaults),
             llm_base_url=_get_value(
-                "COGUARD_LLM_BASE_URL",
-                "http://localhost:8000/v1",
+                "LLM_BASE_URL",
+                "http://127.0.0.1:8000/v1",
                 env_defaults,
             ),
-            llm_model=_get_value("COGUARD_LLM_MODEL", "", env_defaults),
-            llm_api_key=_get_value("COGUARD_LLM_API_KEY", "", env_defaults),
-            llm_temperature=_get_float("COGUARD_LLM_TEMPERATURE", 0.0, env_defaults),
+            llm_api_key=_get_value("LLM_API_KEY", "", env_defaults),
+            llm_model_path=_get_value("LLM_MODEL_PATH", "/model", env_defaults),
+            llm_device=_get_value("LLM_DEVICE", "auto", env_defaults),
+            llm_temperature=_get_float("LLM_TEMPERATURE", 0.0, env_defaults),
             llm_timeout_seconds=_get_float(
-                "COGUARD_LLM_TIMEOUT_SECONDS",
+                "LLM_TIMEOUT_SECONDS",
                 60.0,
                 env_defaults,
             ),
-            llm_max_tokens=_get_int("COGUARD_LLM_MAX_TOKENS", 1024, env_defaults),
-            schema_top_k=_get_int("COGUARD_SCHEMA_TOP_K", 3, env_defaults),
+            llm_max_tokens=_get_int("LLM_MAX_TOKENS", 1024, env_defaults),
+            local_agent_runtime_backend=_get_value(
+                "LOCAL_AGENT_RUNTIME_BACKEND",
+                "",
+                env_defaults,
+            ),
+            local_agent_base_url=_get_value(
+                "LOCAL_AGENT_BASE_URL",
+                "http://127.0.0.1:8000/v1",
+                env_defaults,
+            ),
+            local_agent_model_path=_get_value(
+                "LOCAL_AGENT_MODEL_PATH",
+                "/model",
+                env_defaults,
+            ),
+            local_agent_default_model=_get_value(
+                "LOCAL_AGENT_DEFAULT_MODEL",
+                "",
+                env_defaults,
+            ),
+            local_agent_api_key=_get_value(
+                "LOCAL_AGENT_API_KEY",
+                "",
+                env_defaults,
+            ),
+            semantic_extractor_model=_get_value(
+                "SEMANTIC_EXTRACTOR_MODEL",
+                "",
+                env_defaults,
+            ),
+            semantic_definer_model=_get_value(
+                "SEMANTIC_DEFINER_MODEL",
+                "",
+                env_defaults,
+            ),
+            semantic_canonicalizer_model=_get_value(
+                "SEMANTIC_CANONICALIZER_MODEL",
+                "",
+                env_defaults,
+            ),
+            semantic_entity_model=_get_value(
+                "SEMANTIC_ENTITY_MODEL",
+                "",
+                env_defaults,
+            ),
+            reasoning_judge_model=_get_value(
+                "REASONING_JUDGE_MODEL",
+                "",
+                env_defaults,
+            ),
+            semantic_embedding_backend=_get_value(
+                "SEMANTIC_EMBEDDING_BACKEND",
+                "vector",
+                env_defaults,
+            ),
+            semantic_embedding_model=_get_value(
+                "SEMANTIC_EMBEDDING_MODEL",
+                "",
+                env_defaults,
+            ),
+            semantic_embedding_base_url=_get_value(
+                "SEMANTIC_EMBEDDING_BASE_URL",
+                "http://localhost:8001/v1",
+                env_defaults,
+            ),
+            semantic_embedding_api_key=_get_value(
+                "SEMANTIC_EMBEDDING_API_KEY",
+                "",
+                env_defaults,
+            ),
+            schema_top_k=_get_int("SCHEMA_TOP_K", 3, env_defaults),
             schema_match_threshold=_get_float(
-                "COGUARD_SCHEMA_MATCH_THRESHOLD",
+                "SCHEMA_MATCH_THRESHOLD",
                 0.28,
                 env_defaults,
             ),
             relation_cluster_threshold=_get_float(
-                "COGUARD_RELATION_CLUSTER_THRESHOLD",
+                "RELATION_CLUSTER_THRESHOLD",
                 0.62,
                 env_defaults,
             ),
             refinement_iterations=_get_int(
-                "COGUARD_REFINEMENT_ITERATIONS",
+                "REFINEMENT_ITERATIONS",
                 1,
                 env_defaults,
             ),
             refinement_relation_top_k=_get_int(
-                "COGUARD_REFINEMENT_RELATION_TOP_K",
+                "REFINEMENT_RELATION_TOP_K",
                 5,
                 env_defaults,
             ),
             schema_retriever_backend=_get_value(
-                "COGUARD_SCHEMA_RETRIEVER_BACKEND",
+                "SCHEMA_RETRIEVER_BACKEND",
                 "vector",
                 env_defaults,
             ),
             schema_retriever_model=_get_value(
-                "COGUARD_SCHEMA_RETRIEVER_MODEL",
+                "SCHEMA_RETRIEVER_MODEL",
                 "",
                 env_defaults,
             ),
             schema_retriever_base_url=_get_value(
-                "COGUARD_SCHEMA_RETRIEVER_BASE_URL",
+                "SCHEMA_RETRIEVER_BASE_URL",
                 "http://localhost:8001/v1",
                 env_defaults,
             ),
             schema_retriever_api_key=_get_value(
-                "COGUARD_SCHEMA_RETRIEVER_API_KEY",
+                "SCHEMA_RETRIEVER_API_KEY",
                 "",
                 env_defaults,
             ),
             schema_retriever_instruction=_get_value(
-                "COGUARD_SCHEMA_RETRIEVER_INSTRUCTION",
+                "SCHEMA_RETRIEVER_INSTRUCTION",
                 "Instruct: retrieve relations that are present in the given text\nQuery: {text}",
                 env_defaults,
             ),
             entity_relatedness_threshold=_get_float(
-                "COGUARD_ENTITY_RELATEDNESS_THRESHOLD",
+                "ENTITY_RELATEDNESS_THRESHOLD",
                 0.68,
                 env_defaults,
             ),
+            reasoning_strategy=_get_value(
+                "REASONING_STRATEGY",
+                "hybrid",
+                env_defaults,
+            ),
             reasoning_max_depth=_get_int(
-                "COGUARD_REASONING_MAX_DEPTH",
+                "REASONING_MAX_DEPTH",
                 3,
                 env_defaults,
             ),
             reasoning_beam_width=_get_int(
-                "COGUARD_REASONING_BEAM_WIDTH",
+                "REASONING_BEAM_WIDTH",
                 3,
                 env_defaults,
             ),
             reasoning_risk_evidence_threshold=_get_float(
-                "COGUARD_REASONING_RISK_EVIDENCE_THRESHOLD",
+                "REASONING_RISK_EVIDENCE_THRESHOLD",
                 4.5,
                 env_defaults,
             ),
             reasoning_benign_evidence_threshold=_get_float(
-                "COGUARD_REASONING_BENIGN_EVIDENCE_THRESHOLD",
+                "REASONING_BENIGN_EVIDENCE_THRESHOLD",
                 2.4,
                 env_defaults,
             ),
-            context_hops=_get_int("COGUARD_CONTEXT_HOPS", 2, env_defaults),
-            context_limit=_get_int("COGUARD_CONTEXT_LIMIT", 24, env_defaults),
-            neo4j_uri=_get_value("COGUARD_NEO4J_URI", "", env_defaults),
-            neo4j_username=_get_value("COGUARD_NEO4J_USERNAME", "", env_defaults),
-            neo4j_password=_get_value("COGUARD_NEO4J_PASSWORD", "", env_defaults),
-            neo4j_database=_get_value("COGUARD_NEO4J_DATABASE", "neo4j", env_defaults),
+            reasoning_llm_confidence_threshold=_get_float(
+                "REASONING_LLM_CONFIDENCE_THRESHOLD",
+                0.7,
+                env_defaults,
+            ),
+            reasoning_hybrid_rule_weight=_get_float(
+                "REASONING_HYBRID_RULE_WEIGHT",
+                0.65,
+                env_defaults,
+            ),
+            context_hops=_get_int("CONTEXT_HOPS", 2, env_defaults),
+            context_limit=_get_int("CONTEXT_LIMIT", 24, env_defaults),
+            neo4j_uri=_get_value("NEO4J_URI", "", env_defaults),
+            neo4j_username=_get_value("NEO4J_USERNAME", "", env_defaults),
+            neo4j_password=_get_value("NEO4J_PASSWORD", "", env_defaults),
+            neo4j_database=_get_value("NEO4J_DATABASE", "neo4j", env_defaults),
         )
         for key, value in overrides.items():
             if value is not None:

@@ -1,0 +1,15 @@
+# Remote server dependencies for local multi-agent runtime.
+# Do not install this on the current machine unless you explicitly want to run
+# local model inference here.
+
+transformers>=4.41
+torch>=2.1
+accelerate>=0.30
+sentencepiece>=0.2
+
+# Optional if you prefer serving the local model as an OpenAI-compatible API.
+vllm>=0.5
+
+# Optional if you later switch module orchestration to LangGraph.
+langgraph>=0.2
+langchain-core>=0.3

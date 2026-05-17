@@ -1,6 +1,0 @@
-
-[neo4j]
-neo4j>=5.20
-
-[retriever]
-sentence-transformers>=3.0

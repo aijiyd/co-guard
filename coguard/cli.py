@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 from dataclasses import asdict
 from typing import Optional
 
 from .config import AppConfig
 from .pipeline import CoGuardPipeline
+
+
+logger = logging.getLogger(__name__)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -31,20 +35,25 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--llm-backend",
-        choices=("rule", "local_openai"),
+        choices=("auto", "rule", "local_model", "openai_compatible_local", "vllm_server"),
         help="Override the LLM backend.",
-    )
-    parser.add_argument(
-        "--llm-base-url",
-        help="Override the local OpenAI-compatible LLM base URL.",
     )
     parser.add_argument(
         "--llm-model",
         help="Override the LLM model name.",
     )
     parser.add_argument(
+        "--llm-model-path",
+        help="Override the local model directory. If --llm-model is also set, the model is resolved under this directory.",
+    )
+    parser.add_argument(
+        "--reasoning-strategy",
+        choices=("rules", "llm", "hybrid"),
+        help="Override the graph reasoning strategy.",
+    )
+    parser.add_argument(
         "--schema-retriever-backend",
-        choices=("vector", "sentence_transformer", "openai_embedding"),
+        choices=("vector", "sentence_transformer", "openai_embedding", "aliyun_bailian_embedding"),
         help="Override the schema retriever backend.",
     )
     parser.add_argument(
@@ -56,6 +65,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Override the schema retriever OpenAI-compatible embeddings base URL.",
     )
     parser.add_argument(
+        "--semantic-embedding-backend",
+        choices=("vector", "openai_embedding", "aliyun_bailian_embedding"),
+        help="Override the semantic embedding backend used by module one.",
+    )
+    parser.add_argument(
+        "--semantic-embedding-model",
+        help="Override the semantic embedding model name.",
+    )
+    parser.add_argument(
+        "--semantic-embedding-base-url",
+        help="Override the semantic embedding OpenAI-compatible base URL.",
+    )
+    parser.add_argument(
         "--refinement-iterations",
         type=int,
         help="Override the number of EDC refinement iterations.",
@@ -64,6 +86,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[list] = None) -> int:
+    if not logging.getLogger().handlers:
+        logging.basicConfig(level=logging.INFO, format="%(message)s")
+
     parser = build_parser()
     args = parser.parse_args(argv)
 
@@ -72,11 +97,15 @@ def main(argv: Optional[list] = None) -> int:
     config = AppConfig.from_env(
         graph_backend=args.backend,
         llm_backend=args.llm_backend,
-        llm_base_url=args.llm_base_url,
         llm_model=args.llm_model,
+        llm_model_path=args.llm_model_path,
+        reasoning_strategy=args.reasoning_strategy,
         schema_retriever_backend=args.schema_retriever_backend,
         schema_retriever_model=args.schema_retriever_model,
         schema_retriever_base_url=args.schema_retriever_base_url,
+        semantic_embedding_backend=args.semantic_embedding_backend,
+        semantic_embedding_model=args.semantic_embedding_model,
+        semantic_embedding_base_url=args.semantic_embedding_base_url,
         refinement_iterations=args.refinement_iterations,
     )
     pipeline = CoGuardPipeline(config=config)
@@ -93,19 +122,19 @@ def main(argv: Optional[list] = None) -> int:
 def _run_once(pipeline: CoGuardPipeline, query: str, as_json: bool) -> int:
     result = pipeline.process_query(query)
     if as_json:
-        print(json.dumps(asdict(result), ensure_ascii=False, indent=2))
+        logger.info(json.dumps(asdict(result), ensure_ascii=False, indent=2))
     else:
-        print(_render_text_result(result))
+        logger.info(_render_text_result(result))
     return 0
 
 
 def _run_interactive(pipeline: CoGuardPipeline, as_json: bool) -> int:
-    print("Co-Guard interactive mode. Type 'exit' to quit.")
+    logger.info("Co-Guard interactive mode. Type 'exit' to quit.")
     while True:
         try:
             query = input("> ").strip()
         except EOFError:
-            print()
+            logger.info("")
             break
         if not query:
             continue

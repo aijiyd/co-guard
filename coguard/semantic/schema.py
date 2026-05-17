@@ -9,6 +9,26 @@ from ..models import SchemaRelation
 # relation vocabulary to coordinate around.
 DEFAULT_SCHEMA_RELATIONS = [
     SchemaRelation(
+        name="identifies_target",
+        definition="The subject identifies, scopes, profiles, or selects a target, victim, system, or asset.",
+    ),
+    SchemaRelation(
+        name="discovers_weakness",
+        definition="The subject discovers, enumerates, verifies, or studies vulnerabilities, weaknesses, or attack vectors in a target.",
+    ),
+    SchemaRelation(
+        name="acquires_capability",
+        definition="The subject acquires, studies, or prepares tools, techniques, parts, skills, or resources needed to perform an action.",
+    ),
+    SchemaRelation(
+        name="plans_execution",
+        definition="The subject asks for or outlines steps, procedures, or instructions to carry out an action or attack.",
+    ),
+    SchemaRelation(
+        name="plans_evasion",
+        definition="The subject plans how to avoid detection, reduce consequences, or handle enforcement responses while carrying out an action.",
+    ),
+    SchemaRelation(
         name="uses_tool",
         definition="The subject uses a tool, agent, or capability to help complete a task.",
     ),
@@ -59,6 +79,66 @@ DEFAULT_SCHEMA_RELATIONS = [
 ]
 
 RELATION_SYNONYMS = {
+    "identifies_target": {
+        "identifies_target",
+        "identify target",
+        "scope target",
+        "select target",
+        "profile target",
+        "锁定目标",
+        "识别目标",
+        "确定目标",
+        "界定目标范围",
+    },
+    "discovers_weakness": {
+        "discovers_weakness",
+        "discover weakness",
+        "identify vulnerabilities",
+        "find weaknesses",
+        "research attack vectors",
+        "confirm vulnerability",
+        "verify vulnerability",
+        "发现弱点",
+        "识别漏洞",
+        "确认漏洞",
+        "研究攻击向量",
+    },
+    "acquires_capability": {
+        "acquires_capability",
+        "acquire capability",
+        "learn tools",
+        "learn techniques",
+        "gain familiarity",
+        "study methods",
+        "prepare tools",
+        "获得能力",
+        "学习工具",
+        "学习技术",
+        "掌握方法",
+        "熟悉工具",
+    },
+    "plans_execution": {
+        "plans_execution",
+        "plan execution",
+        "execution steps",
+        "exploit steps",
+        "carry out action",
+        "实施步骤",
+        "执行步骤",
+        "利用步骤",
+        "行动方案",
+    },
+    "plans_evasion": {
+        "plans_evasion",
+        "plan evasion",
+        "avoid detection",
+        "handle detection",
+        "reduce consequences",
+        "规避侦测",
+        "避免检测",
+        "应对侦测",
+        "降低后果",
+    },
     "uses_tool": {
         "使用",
         "调用",
@@ -229,7 +309,10 @@ SYNONYM_TO_SCHEMA = {
 
 
 def exact_schema_match(token: str) -> Optional[str]:
-    return SYNONYM_TO_SCHEMA.get(token.lower())
+    normalized = token.lower().strip()
+    if normalized in SCHEMA_BY_NAME:
+        return normalized
+    return SYNONYM_TO_SCHEMA.get(normalized)
 
 
 def all_relation_tokens() -> Set[str]:

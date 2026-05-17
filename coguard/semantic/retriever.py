@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Dict, List, Optional, Sequence
 from urllib import error, request
 
@@ -145,7 +146,7 @@ class OpenAIEmbeddingSchemaRetriever(BaseSchemaRetriever):
         super().__init__()
         self.base_url = base_url.rstrip("/")
         self.model = model
-        self.api_key = api_key
+        self.api_key = api_key or os.getenv("DASHSCOPE_API_KEY", "")
         self.timeout_seconds = timeout_seconds
         self.instruction_template = instruction_template
         self.fallback = fallback
@@ -224,7 +225,7 @@ def build_schema_retriever(config: AppConfig) -> BaseSchemaRetriever:
             instruction_template=config.schema_retriever_instruction,
             fallback=fallback,
         )
-    if backend == "openai_embedding":
+    if backend in {"openai_embedding", "aliyun_bailian_embedding", "dashscope_embedding"}:
         return OpenAIEmbeddingSchemaRetriever(
             base_url=config.schema_retriever_base_url,
             model=config.schema_retriever_model,

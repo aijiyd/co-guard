@@ -15,6 +15,21 @@
 
 当前实现已经不是最初的“关键词加总器”，而是一个受 Think-on-Graph 启发的 `relation-first` 路径推理器。它的目标不是回答知识问答，而是沿图中的关系路径收集风险证据与反证，再判断证据是否已经足够支持最终决策。
 
+当前还支持三种推理策略：
+
+- `rules`
+  只使用 relation-first 规则推理。
+- `llm`
+  让 LLM 基于图证据做最终判决，但仍复用规则推理产出的证据路径。
+- `hybrid`
+  先跑规则推理，再用 LLM 做二次审阅，最后按保守策略融合两者结论。
+
+默认推荐 `hybrid`，因为它最符合“模型优先、规则兜底”的系统目标：
+
+- 规则层负责稳定产出路径证据
+- LLM 负责做更强的语义判别
+- 模型不可用时仍然可以完整退回规则推理
+
 ## 2. 文件结构
 
 - `reasoner.py`
@@ -43,6 +58,15 @@
 1. 先构造路径搜索空间
 2. 再搜索和裁剪候选路径
 3. 最后判断当前证据是否足够
+
+如果启用了 `hybrid` 或 `llm`，规则推理不会被移除，而是继续承担：
+
+- 图遍历
+- 证据路径生成
+- 反证路径生成
+- 缺失链路识别
+
+LLM 负责补一层“图证据审阅”，尤其适合处理规则边界附近的复杂样本。
 
 ## 4. 输入信号构建
 
@@ -308,10 +332,10 @@
 
 模块三受以下配置控制：
 
-- `COGUARD_REASONING_MAX_DEPTH`
-- `COGUARD_REASONING_BEAM_WIDTH`
-- `COGUARD_REASONING_RISK_EVIDENCE_THRESHOLD`
-- `COGUARD_REASONING_BENIGN_EVIDENCE_THRESHOLD`
+- `REASONING_MAX_DEPTH`
+- `REASONING_BEAM_WIDTH`
+- `REASONING_RISK_EVIDENCE_THRESHOLD`
+- `REASONING_BENIGN_EVIDENCE_THRESHOLD`
 
 它们分别控制：
 
