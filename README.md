@@ -284,7 +284,6 @@ export NEO4J_DATABASE=neo4j
 - 当前实现同时提供规则式 fallback 和本地部署 LLM / schema retriever 接口。
 - 如果服务未启动，流程仍可离线运行，但 refinement 增益会退化为规则和向量近似。
 
-## Author
+## 👤 Author
 
-👤 **aijiyd**
-* Jinan University
+**aijiyd** Jinan University
